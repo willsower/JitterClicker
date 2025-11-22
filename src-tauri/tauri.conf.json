@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "jitter-clicker",
+        "title": "Jitter Auto Clicker",
         "width": 800,
         "height": 600
       }
