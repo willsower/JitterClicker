@@ -7,13 +7,19 @@ type Mode = "until-stopped" | "repeat";
 type LocationMode = "cursor" | "fixed";
 type ButtonType = "left" | "right" | "middle";
 type ClickType = "single" | "double";
+type Pattern = "constant" | "jitter";
 
 function App() {
   const [isRunning, setIsRunning] = useState(false);
 
+  const [pattern, setPattern] = useState<Pattern>("constant");
+
   const [clicksPerSecond, setClicksPerSecond] = useState(10);
   const [mode, setMode] = useState<Mode>("until-stopped");
   const [repeatCount, setRepeatCount] = useState(100);
+
+  const [jitterMinMinutes, setJitterMinMinutes] = useState(5);
+  const [jitterMaxMinutes, setJitterMaxMinutes] = useState(10);
 
   const [button, setButton] = useState<ButtonType>("left");
   const [clickType, setClickType] = useState<ClickType>("single");
@@ -30,20 +36,36 @@ function App() {
 
   const clampedCps = useMemo(
     () => Math.min(20, Math.max(1, clicksPerSecond)),
-    [clicksPerSecond],
+    [clicksPerSecond]
   );
-  const intervalMs = useMemo(
-    () => Math.round(1000 / clampedCps),
-    [clampedCps],
-  );
+  const intervalMs = useMemo(() => Math.round(1000 / clampedCps), [clampedCps]);
 
   const statusLabel = isRunning ? "Running" : "Ready";
   const statusDotColor = isRunning ? "#22c55e" : "#9ca3af";
 
   const startWithConfig = async () => {
+    const jitterMinMs = Math.max(
+      1000,
+      Math.min(
+        Math.round(jitterMinMinutes * 60_000),
+        Math.round(jitterMaxMinutes * 60_000)
+      )
+    );
+
+    const jitterMaxMs = Math.max(
+      1000,
+      Math.max(
+        Math.round(jitterMinMinutes * 60_000),
+        Math.round(jitterMaxMinutes * 60_000)
+      )
+    );
+
     const config = {
+      pattern,
       clicks_per_second: clampedCps,
-      mode: mode === "until-stopped" ? "until-stopped" : "repeat",
+      jitter_min_ms: jitterMinMs,
+      jitter_max_ms: jitterMaxMs,
+      mode,
       repeat_count: repeatCount,
       button,
       click_type: clickType,
@@ -69,36 +91,26 @@ function App() {
     }
     setIsRunning(false);
     setLastRunSeconds(12.3);
-    setTotalClicks((prev) => prev + 1240);
+    setTotalClicks((p) => p + 1240);
   };
 
   const handleToggle = async () => {
-    if (isRunning) {
-      await stopClicking();
-    } else {
-      await startWithConfig();
-    }
+    if (isRunning) await stopClicking();
+    else await startWithConfig();
   };
 
   useEffect(() => {
     async function setupShortcuts() {
       try {
-        await register("Command+Option+S", () => {
-          handleToggle();
-        });
+        await register("Command+Option+S", handleToggle);
       } catch (e) {
         console.error("Failed to register global shortcuts:", e);
       }
     }
 
     setupShortcuts();
-
-    return () => {
-      unregisterAll().catch((e) =>
-        console.error("Failed to unregister shortcuts:", e),
-      );
-    };
-  }, [handleToggle]);
+    return () => unregisterAll().catch(() => {});
+  }, []);
 
   return (
     <main className="container auto-clicker">
@@ -108,10 +120,7 @@ function App() {
           <span className="hotkey-pill">⌘ ⌥ S</span>
         </div>
         <div className="status-row">
-          <span
-            className="status-dot"
-            style={{ backgroundColor: statusDotColor }}
-          />
+          <span className="status-dot" style={{ backgroundColor: statusDotColor }} />
           <span className="status-text">{statusLabel}</span>
         </div>
       </header>
@@ -126,44 +135,117 @@ function App() {
       </section>
 
       <section className="section">
-        <h2 className="section-title">Click Speed</h2>
+        <h2 className="section-title">Click Pattern</h2>
+        <div className="field-column">
+          <label className="radio-row">
+            <input
+              type="radio"
+              name="pattern"
+              value="constant"
+              checked={pattern === "constant"}
+              onChange={() => setPattern("constant")}
+            />
+            <span>Constant speed</span>
+          </label>
 
-        <div className="field-row">
-          <label className="field-label">Speed</label>
-          <div className="field-column" style={{ width: "100%" }}>
-            <div className="field-inline" style={{ width: "100%" }}>
-              <input
-                type="range"
-                min={1}
-                max={20}
-                value={clampedCps}
-                onChange={(e) =>
-                  setClicksPerSecond(
-                    Math.min(20, Math.max(1, Number(e.target.value) || 1)),
-                  )
-                }
-                style={{ flex: 1 }}
-              />
+          <label className="radio-row">
+            <input
+              type="radio"
+              name="pattern"
+              value="jitter"
+              checked={pattern === "jitter"}
+              onChange={() => setPattern("jitter")}
+            />
+            <span>Jitter (random timed clicks)</span>
+          </label>
+        </div>
+      </section>
+
+      {pattern === "constant" && (
+        <section className="section">
+          <h2 className="section-title">Click Speed</h2>
+
+          <div className="field-row">
+            <label className="field-label">Speed</label>
+            <div className="field-column" style={{ width: "100%" }}>
+              <div className="field-inline" style={{ width: "100%" }}>
+                <input
+                  type="range"
+                  min={1}
+                  max={20}
+                  value={clampedCps}
+                  onChange={(e) =>
+                    setClicksPerSecond(
+                      Math.min(20, Math.max(1, Number(e.target.value) || 1))
+                    )
+                  }
+                  style={{ flex: 1 }}
+                />
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={clampedCps}
+                  onChange={(e) =>
+                    setClicksPerSecond(
+                      Math.min(20, Math.max(1, Number(e.target.value) || 1))
+                    )
+                  }
+                  className="input input-inline"
+                />
+                <span className="suffix">CPS</span>
+              </div>
+              <span className="hint">
+                ≈ {intervalMs} ms between clicks
+              </span>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {pattern === "jitter" && (
+        <section className="section">
+          <h2 className="section-title">Jitter Timing</h2>
+
+          <div className="field-row">
+            <label className="field-label">Delay range</label>
+            <div className="field-inline">
               <input
                 type="number"
-                min={1}
-                max={20}
-                value={clampedCps}
+                min={0.1}
+                step={0.1}
+                value={jitterMinMinutes}
                 onChange={(e) =>
-                  setClicksPerSecond(
-                    Math.min(20, Math.max(1, Number(e.target.value) || 1)),
-                  )
+                  setJitterMinMinutes(Math.max(0.1, Number(e.target.value) || 0.1))
                 }
                 className="input input-inline"
               />
-              <span className="suffix">CPS</span>
-            </div>
-            <span className="hint">
-              ≈ {intervalMs} ms between clicks (max 20 CPS)
-            </span>
-          </div>
-        </div>
+              <span className="suffix">min</span>
+              <span style={{ margin: "0 4px" }}>to</span>
 
+              <input
+                type="number"
+                min={0.1}
+                step={0.1}
+                value={jitterMaxMinutes}
+                onChange={(e) =>
+                  setJitterMaxMinutes(Math.max(0.1, Number(e.target.value) || 0.1))
+                }
+                className="input input-inline"
+              />
+              <span className="suffix">min</span>
+            </div>
+          </div>
+
+          <p className="hint">
+            It will click once at a random time in this range, then again using a
+            new random delay from the last click.
+          </p>
+        </section>
+      )}
+
+      <section className="section">
+        <h2 className="section-title">Run Mode</h2>
         <div className="field-row">
           <label className="field-label">Mode</label>
           <div className="field-column">
@@ -202,34 +284,10 @@ function App() {
             </label>
           </div>
         </div>
-
-        <div className="field-row">
-          <label className="field-label">Button</label>
-          <div className="field-inline">
-            <select
-              value={button}
-              onChange={(e) => setButton(e.target.value as ButtonType)}
-              className="select"
-            >
-              <option value="left">Left</option>
-              <option value="right">Right</option>
-              <option value="middle">Middle</option>
-            </select>
-            <select
-              value={clickType}
-              onChange={(e) => setClickType(e.target.value as ClickType)}
-              className="select"
-            >
-              <option value="single">Single</option>
-              <option value="double">Double</option>
-            </select>
-          </div>
-        </div>
       </section>
 
       <section className="section">
         <h2 className="section-title">Location</h2>
-
         <div className="field-column">
           <label className="radio-row">
             <input
@@ -251,7 +309,7 @@ function App() {
               onChange={() => setLocationMode("fixed")}
             />
             <span>
-              Fixed point:{" "}
+              Fixed:{" "}
               <input
                 type="number"
                 value={fixedX}
@@ -266,17 +324,7 @@ function App() {
                 disabled={locationMode !== "fixed"}
                 onChange={(e) => setFixedY(Number(e.target.value) || 0)}
                 className="input input-inline"
-              />{" "}
-              <button
-                type="button"
-                className="secondary-button"
-                disabled={locationMode !== "fixed"}
-                onClick={() => {
-                  console.log("Pick fixed point not implemented yet");
-                }}
-              >
-                Pick
-              </button>
+              />
             </span>
           </label>
         </div>
@@ -284,7 +332,6 @@ function App() {
 
       <section className="section">
         <h2 className="section-title">Behavior</h2>
-
         <div className="field-row">
           <label className="field-label">Start delay</label>
           <div className="field-inline">

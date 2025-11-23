@@ -1797,6 +1797,7 @@ name = "jitter-clicker"
 version = "0.1.0"
 dependencies = [
  "enigo",
+ "rand 0.8.5",
  "serde",
  "serde_json",
  "tauri",

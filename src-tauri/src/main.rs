@@ -15,6 +15,7 @@ use enigo::{
     Mouse,
     Settings,
 };
+use rand::Rng;
 use serde::Deserialize;
 use tauri::State;
 
@@ -48,8 +49,18 @@ enum LocationMode {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "kebab-case")]
+enum ClickPattern {
+    Constant,
+    Jitter,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 struct StartConfig {
+    pattern: ClickPattern,
     clicks_per_second: u64,
+    jitter_min_ms: u64,
+    jitter_max_ms: u64,
     mode: Mode,
     repeat_count: u64,
     button: Button,
@@ -101,6 +112,14 @@ fn start_clicking(state: State<SharedState>, config: StartConfig) -> Result<(), 
         let cps = config.clicks_per_second.max(1);
         let interval_ms = (1000 / cps).max(10);
 
+        let mut jitter_min_ms = config.jitter_min_ms.max(1);
+        let mut jitter_max_ms = config.jitter_max_ms.max(1);
+        if jitter_min_ms > jitter_max_ms {
+            std::mem::swap(&mut jitter_min_ms, &mut jitter_max_ms);
+        }
+
+        let mut rng = rand::thread_rng();
+
         let click_once = |enigo: &mut Enigo| {
             match config.location_mode {
                 LocationMode::Cursor => {
@@ -133,29 +152,62 @@ fn start_clicking(state: State<SharedState>, config: StartConfig) -> Result<(), 
             }
         };
 
-        match config.mode {
-            Mode::UntilStopped => {
-                while {
-                    let s = shared_state.lock().unwrap();
-                    s.running
-                } {
-                    click_once(&mut enigo);
-                    thread::sleep(Duration::from_millis(interval_ms));
-                }
-            }
-            Mode::Repeat => {
-                for _ in 0..config.repeat_count {
-                    {
-                        let s = shared_state.lock().unwrap();
-                        if !s.running {
-                            break;
+        match config.pattern {
+            ClickPattern::Constant => {
+                match config.mode {
+                    Mode::UntilStopped => {
+                        while {
+                            let s = shared_state.lock().unwrap();
+                            s.running
+                        } {
+                            click_once(&mut enigo);
+                            thread::sleep(Duration::from_millis(interval_ms));
                         }
                     }
-                    click_once(&mut enigo);
-                    thread::sleep(Duration::from_millis(interval_ms));
+                    Mode::Repeat => {
+                        for _ in 0..config.repeat_count {
+                            {
+                                let s = shared_state.lock().unwrap();
+                                if !s.running {
+                                    break;
+                                }
+                            }
+                            click_once(&mut enigo);
+                            thread::sleep(Duration::from_millis(interval_ms));
+                        }
+                        let mut s = shared_state.lock().unwrap();
+                        s.running = false;
+                    }
                 }
-                let mut s = shared_state.lock().unwrap();
-                s.running = false;
+            }
+            ClickPattern::Jitter => {
+                match config.mode {
+                    Mode::UntilStopped => {
+                        while {
+                            let s = shared_state.lock().unwrap();
+                            s.running
+                        } {
+                            let delay = rng.gen_range(jitter_min_ms..=jitter_max_ms);
+                            thread::sleep(Duration::from_millis(delay));
+                            click_once(&mut enigo);
+                        }
+                    }
+                    Mode::Repeat => {
+                        for _ in 0..config.repeat_count {
+                            {
+                                let s = shared_state.lock().unwrap();
+                                if !s.running {
+                                    break;
+                                }
+                            }
+                            let delay = rng.gen_range(jitter_min_ms..=jitter_max_ms);
+                            thread::sleep(Duration::from_millis(delay));
+                            click_once(&mut enigo);
+                        }
+                        let mut s = shared_state.lock().unwrap();
+                        s.running = false;
+                    }
+                }
             }
         }
     });
