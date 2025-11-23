@@ -154,3 +154,7 @@
   font-size: 0.8rem;
   color: #6b7280;
 }
+
+.footer-text {
+  white-space: nowrap;
+}
