@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
 import "./App.css";
 
 type Mode = "until-stopped" | "repeat";
@@ -10,7 +11,7 @@ type ClickType = "single" | "double";
 function App() {
   const [isRunning, setIsRunning] = useState(false);
 
-  const [intervalMs, setIntervalMs] = useState(100);
+  const [clicksPerSecond, setClicksPerSecond] = useState(10);
   const [mode, setMode] = useState<Mode>("until-stopped");
   const [repeatCount, setRepeatCount] = useState(100);
 
@@ -28,43 +29,84 @@ function App() {
   const [lastRunSeconds, setLastRunSeconds] = useState(0);
   const [totalClicks, setTotalClicks] = useState(0);
 
-  const cps = useMemo(() => (intervalMs > 0 ? 1000 / intervalMs : 0), [intervalMs]);
+  const clampedCps = useMemo(
+    () => Math.min(20, Math.max(1, clicksPerSecond)),
+    [clicksPerSecond]
+  );
+  const intervalMs = useMemo(
+    () => Math.round(1000 / clampedCps),
+    [clampedCps]
+  );
 
   const statusLabel = isRunning ? "Running" : "Ready";
   const statusDotColor = isRunning ? "#22c55e" : "#9ca3af";
 
-  const handleToggle = async () => {
-    if (isRunning) {
-      try {
-        await invoke("stop_clicking");
-      } catch (e) {
-        console.error("Failed to stop_clicking:", e);
-      }
-      setIsRunning(false);
-      setLastRunSeconds(12.3);
-      setTotalClicks((prev) => prev + 1240);
-    } else {
-      const config = {
-        interval_ms: intervalMs,
-        mode: mode === "until-stopped" ? "until-stopped" : "repeat",
-        repeat_count: repeatCount,
-        button,
-        click_type: clickType,
-        location_mode: locationMode,
-        fixed_x: fixedX,
-        fixed_y: fixedY,
-        start_delay_sec: startDelaySec,
-        stop_on_esc: stopOnEsc,
-      };
+  const startWithConfig = async () => {
+    const config = {
+      clicks_per_second: clampedCps,
+      mode: mode === "until-stopped" ? "until-stopped" : "repeat",
+      repeat_count: repeatCount,
+      button,
+      click_type: clickType,
+      location_mode: locationMode,
+      fixed_x: fixedX,
+      fixed_y: fixedY,
+      start_delay_sec: startDelaySec,
+      stop_on_esc: stopOnEsc,
+    };
 
-      try {
-        await invoke("start_clicking", { config });
-        setIsRunning(true);
-      } catch (e) {
-        console.error("Failed to start_clicking:", e);
-      }
+    try {
+      await invoke("start_clicking", { config });
+      setIsRunning(true);
+    } catch (e) {
+      console.error("Failed to start_clicking:", e);
     }
   };
+
+  const stopClicking = async () => {
+    try {
+      await invoke("stop_clicking");
+    } catch (e) {
+      console.error("Failed to stop_clicking:", e);
+    }
+    setIsRunning(false);
+    setLastRunSeconds(12.3);
+    setTotalClicks((prev) => prev + 1240);
+  };
+
+  const handleToggle = async () => {
+    if (isRunning) {
+      await stopClicking();
+    } else {
+      await startWithConfig();
+    }
+  };
+
+  useEffect(() => {
+    async function setupShortcuts() {
+      try {
+        await register("Command+Option+S", () => {
+          handleToggle();
+        });
+
+        if (stopOnEsc) {
+          await register("Escape", () => {
+            handleToggle();
+          });
+        }
+      } catch (e) {
+        console.error("Failed to register global shortcuts:", e);
+      }
+    }
+
+    setupShortcuts();
+
+    return () => {
+      unregisterAll().catch((e) =>
+        console.error("Failed to unregister shortcuts:", e)
+      );
+    };
+  }, [stopOnEsc, clampedCps, mode, repeatCount, button, clickType, locationMode, fixedX, fixedY, startDelaySec, isRunning]);
 
   return (
     <main className="container auto-clicker">
@@ -89,20 +131,41 @@ function App() {
       </section>
 
       <section className="section">
-        <h2 className="section-title">Click Settings</h2>
+        <h2 className="section-title">Click Speed</h2>
 
         <div className="field-row">
-          <label className="field-label">Interval</label>
-          <div className="field-inline">
-            <input
-              type="number"
-              min={1}
-              value={intervalMs}
-              onChange={(e) => setIntervalMs(Math.max(1, Number(e.target.value) || 1))}
-              className="input"
-            />
-            <span className="suffix">ms</span>
-            <span className="hint">≈ {cps.toFixed(1)} CPS</span>
+          <label className="field-label">Speed</label>
+          <div className="field-column" style={{ width: "100%" }}>
+            <div className="field-inline" style={{ width: "100%" }}>
+              <input
+                type="range"
+                min={1}
+                max={20}
+                value={clampedCps}
+                onChange={(e) =>
+                  setClicksPerSecond(
+                    Math.min(20, Math.max(1, Number(e.target.value) || 1))
+                  )
+                }
+                style={{ flex: 1 }}
+              />
+              <input
+                type="number"
+                min={1}
+                max={20}
+                value={clampedCps}
+                onChange={(e) =>
+                  setClicksPerSecond(
+                    Math.min(20, Math.max(1, Number(e.target.value) || 1))
+                  )
+                }
+                className="input input-inline"
+              />
+              <span className="suffix">CPS</span>
+            </div>
+            <span className="hint">
+              ≈ {intervalMs} ms between clicks (max 20 CPS)
+            </span>
           </div>
         </div>
 
@@ -258,7 +321,7 @@ function App() {
               checked={stopOnEsc}
               onChange={(e) => setStopOnEsc(e.target.checked)}
             />
-            <span>Stop on ESC</span>
+            <span>Stop on ESC (global)</span>
           </label>
         </div>
       </section>

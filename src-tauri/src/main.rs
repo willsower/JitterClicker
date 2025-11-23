@@ -49,7 +49,7 @@ enum LocationMode {
 
 #[derive(Debug, Deserialize, Clone)]
 struct StartConfig {
-    interval_ms: u64,
+    clicks_per_second: u64,
     mode: Mode,
     repeat_count: u64,
     button: Button,
@@ -99,7 +99,8 @@ fn start_clicking(state: State<SharedState>, config: StartConfig) -> Result<(), 
             Button::Middle => EnigoButton::Middle,
         };
 
-        let interval_ms = config.interval_ms.max(10);
+        let cps = config.clicks_per_second.max(1);
+        let interval_ms = (1000 / cps).max(10);
 
         let click_once = |enigo: &mut Enigo| {
             match config.location_mode {
@@ -184,6 +185,7 @@ fn main() {
             handle: None,
         })))
         .invoke_handler(tauri::generate_handler![start_clicking, stop_clicking])
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
