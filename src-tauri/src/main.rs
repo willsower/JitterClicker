@@ -58,7 +58,6 @@ struct StartConfig {
     fixed_x: i32,
     fixed_y: i32,
     start_delay_sec: u64,
-    stop_on_esc: bool,
 }
 
 struct AppState {

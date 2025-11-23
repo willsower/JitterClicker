@@ -24,18 +24,17 @@ function App() {
 
   const [startDelaySec, setStartDelaySec] = useState(3);
   const [showInMenubar, setShowInMenubar] = useState(true);
-  const [stopOnEsc, setStopOnEsc] = useState(true);
 
   const [lastRunSeconds, setLastRunSeconds] = useState(0);
   const [totalClicks, setTotalClicks] = useState(0);
 
   const clampedCps = useMemo(
     () => Math.min(20, Math.max(1, clicksPerSecond)),
-    [clicksPerSecond]
+    [clicksPerSecond],
   );
   const intervalMs = useMemo(
     () => Math.round(1000 / clampedCps),
-    [clampedCps]
+    [clampedCps],
   );
 
   const statusLabel = isRunning ? "Running" : "Ready";
@@ -52,7 +51,6 @@ function App() {
       fixed_x: fixedX,
       fixed_y: fixedY,
       start_delay_sec: startDelaySec,
-      stop_on_esc: stopOnEsc,
     };
 
     try {
@@ -88,12 +86,6 @@ function App() {
         await register("Command+Option+S", () => {
           handleToggle();
         });
-
-        if (stopOnEsc) {
-          await register("Escape", () => {
-            handleToggle();
-          });
-        }
       } catch (e) {
         console.error("Failed to register global shortcuts:", e);
       }
@@ -103,10 +95,10 @@ function App() {
 
     return () => {
       unregisterAll().catch((e) =>
-        console.error("Failed to unregister shortcuts:", e)
+        console.error("Failed to unregister shortcuts:", e),
       );
     };
-  }, [stopOnEsc, clampedCps, mode, repeatCount, button, clickType, locationMode, fixedX, fixedY, startDelaySec, isRunning]);
+  }, [handleToggle]);
 
   return (
     <main className="container auto-clicker">
@@ -116,7 +108,10 @@ function App() {
           <span className="hotkey-pill">⌘ ⌥ S</span>
         </div>
         <div className="status-row">
-          <span className="status-dot" style={{ backgroundColor: statusDotColor }} />
+          <span
+            className="status-dot"
+            style={{ backgroundColor: statusDotColor }}
+          />
           <span className="status-text">{statusLabel}</span>
         </div>
       </header>
@@ -144,7 +139,7 @@ function App() {
                 value={clampedCps}
                 onChange={(e) =>
                   setClicksPerSecond(
-                    Math.min(20, Math.max(1, Number(e.target.value) || 1))
+                    Math.min(20, Math.max(1, Number(e.target.value) || 1)),
                   )
                 }
                 style={{ flex: 1 }}
@@ -156,7 +151,7 @@ function App() {
                 value={clampedCps}
                 onChange={(e) =>
                   setClicksPerSecond(
-                    Math.min(20, Math.max(1, Number(e.target.value) || 1))
+                    Math.min(20, Math.max(1, Number(e.target.value) || 1)),
                   )
                 }
                 className="input input-inline"
@@ -314,14 +309,6 @@ function App() {
               onChange={(e) => setShowInMenubar(e.target.checked)}
             />
             <span>Show in menu bar</span>
-          </label>
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={stopOnEsc}
-              onChange={(e) => setStopOnEsc(e.target.checked)}
-            />
-            <span>Stop on ESC (global)</span>
           </label>
         </div>
       </section>
